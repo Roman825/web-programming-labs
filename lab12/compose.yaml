@@ -1,0 +1,54 @@
+services:
+  # ===== База даних PostgreSQL =====
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    # Іменований том — дані БД зберігаються між перезапусками контейнера
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # healthcheck перевіряє що PostgreSQL готовий приймати з'єднання
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ===== Backend Nest.js =====
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3000
+      # DB_HOST=db — ім'я сервісу вище (Docker DNS у спільній мережі)
+      # Локально DB_HOST=localhost, але в контейнері — db
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: 1h
+    ports:
+      - "3000:3000"
+    # Backend стартує лише після того як db пройде healthcheck
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ===== Frontend React + Nginx =====
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+# Іменований том — керується Docker, не залежить від шляхів хостової ОС
+volumes:
+  postgres_data:
